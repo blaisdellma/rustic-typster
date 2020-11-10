@@ -1,0 +1,12 @@
+[package]
+name = "rustic-typster"
+version = "0.1.0"
+authors = ["blaisdellma <blaisdellma@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-std = "1.7.0"
+futures = "0.3.8"
+crossterm = {version = "0.18.2", features = ["event-stream"]}

@@ -1,0 +1,7 @@
+This is a line for rustic-typster.
+This is another line.
+This is a third line.
+How about a fourth one too?
+Would you care to add another, maybe a fifth?
+too
+That one is too short and this one is too long and now I have to keep typing to get to 80 chars
