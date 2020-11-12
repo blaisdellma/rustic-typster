@@ -1,31 +1,48 @@
 use std::fs::File;
 use std::path::Path;
 use std::io::{self,Read,Write};
-use std::time::SystemTime;
+use std::time::{SystemTime,Duration};
+use std::convert::TryFrom;
 
 use crossterm::event::{EventStream,KeyCode,Event,KeyEvent,DisableMouseCapture,EnableMouseCapture};
-use crossterm::terminal::{Clear,ClearType,enable_raw_mode,disable_raw_mode};
-use crossterm::cursor::{MoveDown,MoveLeft,MoveTo};
+use crossterm::terminal::{SetSize,Clear,ClearType,enable_raw_mode,disable_raw_mode};
+use crossterm::cursor::{MoveDown,MoveLeft,MoveTo,Hide,Show,MoveToColumn};
 use crossterm::{execute,queue,ErrorKind};
 use crossterm::style::{ResetColor,SetForegroundColor,SetBackgroundColor,Color,Attribute};
+
 use futures::{future::FutureExt, select, StreamExt};
+use futures_timer::Delay;
 
 #[derive(Debug,Copy,Clone,Default)]
 struct TypeResult {
     strlen: u32,
-    time: u128,
+    time: u32,
     mistakes: u32,
 }
 
-async fn can_you_type(line: &str) -> Result<TypeResult,ErrorKind> {
+fn print_centered(cols: u16, line: String) -> u16 {
+    let offset: u16 = (cols - u16::try_from(line.len()).expect("String length too long for u16"))/2;
+    queue!(io::stdout(),MoveToColumn(offset));
+    write!(io::stdout(),"{}",line);
+    offset
+}
+
+async fn can_you_type(line: String,cols: u16) -> Result<TypeResult,ErrorKind> {
+    let mut stdout = io::stdout();
+
+    execute!(stdout,Show);
     let mut start = SystemTime::now();
-    let mut hasStarted = false;
+    let mut has_started = false;
     let mut res = TypeResult::default();
     res.strlen = line.len() as u32;
     let mut reader = EventStream::new();
-    println!("{}\r",line);
+
+    let offset = print_centered(cols,line.clone());
+    queue!(stdout,MoveDown(1),MoveToColumn(offset));
+    stdout.flush();
     let chars = line.chars().collect::<Vec<char>>();
     let mut typed = Vec::<char>::new();
+
     loop {
         let mut event = reader.next().fuse();
         select! {
@@ -37,8 +54,6 @@ async fn can_you_type(line: &str) -> Result<TypeResult,ErrorKind> {
                             Event::Key(KeyEvent {code: KeyCode::Esc, ..}) => break,
                             Event::Key(KeyEvent {code: KeyCode::Enter, ..}) => {
                                 if typed == chars {
-                                    execute!(io::stdout(),MoveDown(1))?;
-                                    println!("\r\nYOU DID IT!");
                                     break;
                                 }
                             },
@@ -53,8 +68,8 @@ async fn can_you_type(line: &str) -> Result<TypeResult,ErrorKind> {
                                     }
                             },
                             Event::Key(KeyEvent {code: KeyCode::Char(x), ..}) => {
-                                if !hasStarted {
-                                    hasStarted = true;
+                                if !has_started {
+                                    has_started = true;
                                     start = SystemTime::now();
                                 }
                                 typed.push(x);
@@ -80,59 +95,128 @@ async fn can_you_type(line: &str) -> Result<TypeResult,ErrorKind> {
         };
     }
 
-    res.time = start.elapsed().map_err(|e| ErrorKind::ResizingTerminalFailure(format!("Actually a timing failure: {}",e)))?.as_millis();
+    execute!(stdout,Hide);
+
+    res.time = u32::try_from(start.elapsed().map_err(|e| ErrorKind::ResizingTerminalFailure(format!("Actually a timing failure: {}",e)))?.as_millis()).unwrap_or(0);
+
+    queue!(stdout,MoveDown(1));
+    print_centered(cols,format!("t={}ms",res.time));
+    queue!(stdout,MoveDown(2))?;
+    stdout.flush();
+
     Ok(res)
 }
 
-fn main() {
-    println!("WELCOME TO RUSTIC TYPSTER");
+fn delay(millis: u64) {
+    async_std::task::block_on(async {
+        let mut fut = Delay::new(Duration::from_millis(millis)).fuse();
+        select! {
+            _ = fut => ()
+        };
+    });
+}
 
-    let filename = "lines.txt";
+fn intro() -> Result<u16,ErrorKind> {
+    let mut stdout = io::stdout();
 
-    let mut f = File::open(Path::new(filename)).expect("File not found.");
+    let (mut cols,mut rows) = crossterm::terminal::size()?;
 
-    let mut contents = String::new();
-    f.read_to_string(&mut contents).expect(&format!("Failed to read contents of file: {}",filename));
-    //println!("Contents of file:\n{}",contents);
+    if cols < 80 {
+        cols = 80;
+    }
+    if rows < 10 {
+        rows = 10;
+    }
 
-    let lines: Vec<&str> = contents.split_terminator("\r\n").filter(|s| s.len() >= 10 && s.len() <= 80).collect();
+    execute!(stdout,SetSize(cols,rows));
 
-    //println!("Trimmed contents of file:\n{:?}",lines);
+    queue!(stdout,Clear(ClearType::All),Hide,MoveTo(0,0))?;
+    //write!(stdout,"--- WELCOME TO RUSTIC TYPSTER ---")?;
+    print_centered(cols,"--- WELCOME TO RUSTIC TYPSTER ---".into());
+    queue!(stdout,MoveDown(1))?;
+    print_centered(cols,"The typing practice game for Rust".into());
+    stdout.flush()?;
 
-    // let mut buf = String::new();
-    // let stdin =  io::stdin();
-    //
-    // print!("Give me some input: ");
-    // io::stdout().flush().expect("Error in flushing stdout.");
-    // stdin.read_line(&mut buf).expect("Error reading from stdin.");
-    // println!("You typed: {}",buf);
+    delay(1000);
+    queue!(stdout,MoveDown(2))?;
+    print_centered(cols,"Get ready to type!".into());
+    stdout.flush()?;
 
+    delay(500);
+    queue!(stdout,MoveDown(2))?;
+    print_centered(cols-16,"3".into());
+    stdout.flush()?;
 
-    enable_raw_mode().expect("Error in enabling raw mode.");
-    execute!(io::stdout(), EnableMouseCapture).expect("Failed enabling mouse capture");
-    //println!("Waiting for events:\r");
-    //async_std::task::block_on(test_crossterm_event_stream());
+    delay(500);
+    print_centered(cols,"2".into());
+    stdout.flush()?;
+
+    delay(500);
+    print_centered(cols+16,"1".into());
+    stdout.flush()?;
+
+    delay(500);
+    queue!(stdout,MoveDown(3))?;
+    stdout.flush()?;
+
+    Ok(cols)
+}
+
+fn start(lines: Vec<String>) -> Result<(),ErrorKind>{
 
     let mut stdout = io::stdout();
 
-    //queue!(stdout,Clear(ClearType::All),SetForegroundColor(Color::AnsiValue(13)),MoveTo(10,10)).expect("Failed setting color red");
-    write!(stdout,"Can you type this:\r\n").expect("writing output");
-    //queue!(stdout,MoveTo(10,11),ResetColor).expect("Failed resetting color.");
-    stdout.flush().expect("Tried to flush.");
+    enable_raw_mode()?;
+    execute!(stdout, EnableMouseCapture)?;
+
+    let cols = intro()?;
 
     let mut results = Vec::new();
-
     for line in lines {
-        results.push(async_std::task::block_on(can_you_type(line)));
+        results.push(async_std::task::block_on(can_you_type(line,cols)));
     }
+    let results = results.into_iter().collect::<Result<Vec<TypeResult>,ErrorKind>>()?;
 
-    let results = results.into_iter().collect::<Result<Vec<TypeResult>,ErrorKind>>().expect("Error with results.");
-
-    execute!(io::stdout(), DisableMouseCapture).expect("Failed disabling mouse capture");
-    disable_raw_mode().expect("Error in disabling raw mode.");
+    execute!(stdout, Show);
+    execute!(stdout, DisableMouseCapture)?;
+    disable_raw_mode()?;
 
     println!("\rGOODBYE");
 
-    println!("{:?}",results);
+    print_results(results);
+
+    Ok(())
+}
+
+
+
+fn print_results(results: Vec<TypeResult>) {
+    let (cum_len, cum_time, cum_mistakes) = results.iter().fold((0,0,0),|(x,y,z), tr| {
+        (x+tr.strlen,y+tr.time, z+tr.mistakes)
+    });
+
+    let accuracy = 100.0-((cum_mistakes as f32)*100.0/(cum_len as f32));
+
+    let char_per_min = cum_len*60*1000/cum_time;
+
+    println!("You typed {} chars/min at {:.2}% accuracy", char_per_min, accuracy);
+}
+
+fn get_lines(filename: String) -> Result<Vec<String>,io::Error> {
+
+    let mut f = File::open(Path::new(&filename))?;
+
+    let mut contents = String::new();
+    f.read_to_string(&mut contents)?;
+
+    Ok(contents.split_terminator("\r\n").filter(|s| s.len() >= 10 && s.len() <= 80).map(|s| s.into()).collect())
+}
+
+fn main() {
+
+    let filename = "lines.txt".into();
+    let lines = get_lines(filename).unwrap_or(Vec::new());
+
+    start(lines).expect("BIG WOOPS");
 
 }
