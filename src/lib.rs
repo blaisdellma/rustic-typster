@@ -158,7 +158,7 @@ fn intro() -> Result<u16> {
     Ok(cols)
 }
 
-pub fn start(lines: Vec<String>) -> Result<()>{
+pub fn start(lines: impl Iterator<Item = String>) -> Result<()>{
 
     let mut stdout = io::stdout();
 
