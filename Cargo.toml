@@ -12,3 +12,5 @@ async-std = "1.7.0"
 futures = "0.3.8"
 futures-timer = "3.0.2"
 crossterm = {version = "0.18.2", features = ["event-stream"]}
+curl = "0.4.34"
+select = "0.5.0"

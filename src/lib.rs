@@ -6,6 +6,8 @@ use std::convert::TryFrom;
 
 use anyhow::Result;
 
+pub mod fetch;
+
 use crossterm::{
     execute,queue,
     event::{EventStream,KeyCode,Event,KeyEvent,DisableMouseCapture,EnableMouseCapture},
@@ -108,7 +110,7 @@ async fn can_you_type(line: String,cols: u16) -> Result<Option<TypeResult>> {
     Ok(Some(res))
 }
 
-fn delay(millis: u64) {
+pub fn delay(millis: u64) {
     async_std::task::block_on(Delay::new(Duration::from_millis(millis)));
 }
 
