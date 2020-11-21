@@ -11,6 +11,9 @@ anyhow = "1.0.34"
 async-std = "1.7.0"
 futures = "0.3.8"
 futures-timer = "3.0.2"
+reqwest = "0.10.9"
+tokio = {version = "0.2.5", features = ["full"]}
 crossterm = {version = "0.18.2", features = ["event-stream"]}
 curl = "0.4.34"
 select = "0.5.0"
+serde_json = "1.0.59"

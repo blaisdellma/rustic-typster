@@ -7,6 +7,7 @@ use std::convert::TryFrom;
 use anyhow::Result;
 
 pub mod fetch;
+pub mod fetch_async;
 
 use crossterm::{
     execute,queue,

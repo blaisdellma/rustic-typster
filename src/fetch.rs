@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 
 use curl::easy::Easy;
 
-use select::{document::Document,node::Node,predicate::{Attr,Class,Name,Predicate,Or,And}};
+use select::{document::Document,node::Node,predicate::{Attr,Class,Name,Predicate,And}};
 
 #[derive(Debug,Default)]
 pub struct Lines {
@@ -129,7 +129,7 @@ pub fn fetch_html(url: String) -> String {
     transfer.write_function(|data| {
         data_vec.extend_from_slice(data);
         Ok(data.len())
-    });
+    }).expect("curl error");
     transfer.perform().unwrap();
     drop(transfer);
 
@@ -140,8 +140,6 @@ pub fn fetch_html(url: String) -> String {
 
 pub fn fetch_docs_rs() -> Vec<String>{
     println!("Scrapping docs.rs ...");
-
-    let mut file_urls = Vec::<String>::new();
 
     let docs_rs_releases_url = "https://docs.rs/releases".into();
     let docs_rs_base_url = "https://docs.rs".into();
