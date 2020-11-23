@@ -1,6 +1,9 @@
+use std::fs::OpenOptions;
+
 use anyhow::{Result,bail};
 use reqwest::{Client,StatusCode};
 use select::{document::Document,predicate::{Predicate,Attr,Name}};
+use slog::{Drain,Logger,o};
 
 const BASE_CRATES_URL: &str = "https://crates.io/api/v1/crates?sort=recent-downloads";
 
@@ -10,37 +13,63 @@ static APP_USER_AGENT: &str = concat!(
     env!("CARGO_PKG_VERSION"),
 );
 
-#[derive(Debug,Default)]
-struct LineGenerator {
+fn get_logger(filename: String) -> Logger {
+    let file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(filename)
+        .unwrap();
+
+    let decorator = slog_term::PlainDecorator::new(file);
+    let drain = slog_term::FullFormat::new(decorator).build().fuse();
+    let drain = slog_async::Async::new(drain).build().fuse();
+
+    Logger::root(drain, o!())
+}
+
+#[derive(Debug)]
+pub struct LineGenerator {
     min_buf_len: usize,
     repo_urls: Vec<String>,
     file_urls: Vec<String>,
     lines: Vec<String>,
     page_no: u32,
+    logger: Logger,
+}
+
+impl Default for LineGenerator {
+    fn default() -> Self {
+        LineGenerator {
+            min_buf_len: 0,
+            repo_urls: Vec::new(),
+            file_urls: Vec::new(),
+            lines: Vec::new(),
+            page_no: 0,
+            logger: get_logger("tmp.txt".into()),
+        }
+    }
 }
 
 impl LineGenerator {
-    async fn new(min_buf_len: usize) -> Result<Self> {
+    pub async fn new(min_buf_len: usize) -> Result<Self> {
         Ok((Self {min_buf_len, page_no: 1, ..Self::default()}).init().await?)
     }
 
     async fn init(mut self) -> Result<Self> {
-        self.extend_repos().await?;
-        while self.lines.len() < self.min_buf_len {
-            self.extend_lines().await?;
-        }
+        self.extend().await?;
         Ok(self)
     }
 
-    async fn next_line(&mut self) -> Result<String> {
-        loop {
-            match self.lines.pop() {
-                Some(s) => return Ok(s),
-                None => {
-                    self.extend_lines().await?;
-                }
-            }
+    pub fn next_line(&mut self) -> Option<String> {
+        self.lines.pop()
+    }
+
+    pub async fn extend(&mut self) -> Result<()> {
+        while self.lines.len() < self.min_buf_len {
+            self.extend_lines().await?;
         }
+        Ok(())
     }
 
     async fn extend_repos(&mut self) -> Result<usize> {
@@ -84,14 +113,12 @@ impl LineGenerator {
 }
 
 async fn get_page_contents(url: String) -> Result<String> {
-    eprint!("Fetching: {} ",url);
     let client = Client::builder().user_agent(APP_USER_AGENT).build()?;
     let response = client.get(&url).send().await?;
     if response.status() != StatusCode::OK {
         bail!("Error Code: {} trying to fetch {}",response.status(),url);
     }
     let text = response.text().await?;
-    eprintln!("Done!");
     Ok(text)
 }
 
@@ -119,17 +146,8 @@ async fn get_file_urls(repo_url: String) -> Result<(Vec<String>,Vec<String>)> {
     let mut file_urls = Vec::new();
     let mut folder_urls = Vec::new();
 
-    eprintln!("Searching in {}",repo_url);
     let contents = get_page_contents(repo_url).await?;
     let document = Document::from(contents.as_str());
-
-    // let og_url = match document.find(And(Name("meta"),Attr("property","og:url"))).next() {
-    //     Some(node) => match node.attr("content") {
-    //         Some(s) => s,
-    //         None => bail!("Could not find og url for {}",repo_url),
-    //     },
-    //     None => bail!("Could not find og url for {}",repo_url),
-    // };
 
     for node in document.find(Attr("role","rowheader").descendant(Name("a"))) {
         match node.attr("rel") {
@@ -139,10 +157,7 @@ async fn get_file_urls(repo_url: String) -> Result<(Vec<String>,Vec<String>)> {
                     None => (),
                     Some(s) => {
                         if s.contains("blob") && s.ends_with(".rs") {
-                            match convert_file_url_to_raw(format!("https://github.com{}",s)).await? {
-                                Some(x) => file_urls.push(x),
-                                None => (),
-                            }
+                            file_urls.push(format!("https://github.com{}",s));
                         } else if s.contains("tree") {
                             folder_urls.push(format!("https://github.com{}",s));
                         }
@@ -169,33 +184,33 @@ async fn convert_file_url_to_raw(file_url: String) -> Result<Option<String>> {
 }
 
 async fn get_lines(file_url: String) -> Result<Vec<String>> {
-    let contents = get_page_contents(file_url).await?;
-    let lines = contents.split_terminator("\n").map(|s| s.trim()).filter(|s| {
+    let raw_url = match convert_file_url_to_raw(file_url).await? {
+        Some(x) => x,
+        None => return Ok(Vec::new()),
+    };
+    let contents = get_page_contents(raw_url).await?;
+    let lines: Vec<_> = contents.split_terminator("\n").map(|s| s.trim()).filter(|s| {
         s.len() >= 10 && s.len() <= 80
         &&
         !s.starts_with("//")
     }).map(|s| s.into()).collect();
-
     Ok(lines)
 }
 
 #[tokio::main]
 async fn main_rustic_typster() -> Result<()> {
     let mut line_gen = LineGenerator::new(10).await?;
-    // println!("Print repo urls:");
-    // for s in line_gen.repo_urls {
-    //     println!("{}",s);
-    // }
-    // println!("Print file urls:");
-    // for s in line_gen.file_urls {
-    //     println!("{}",s);
-    // }
-    // println!("Lines:");
-    // for s in line_gen.lines {
-    //     println!("{}",s);
-    // }
     for _ in 0..100 {
-        println!("{}",line_gen.next_line().await?);
+        let line = loop {
+            match line_gen.next_line() {
+                Some(x) => break x,
+                None => {
+                    line_gen.extend().await?;
+                },
+            }
+        };
+
+        println!("{}",line);
     }
     Ok(())
 }

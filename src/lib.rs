@@ -8,6 +8,7 @@ use anyhow::Result;
 
 pub mod fetch;
 pub mod fetch_async;
+pub mod type_async;
 
 use crossterm::{
     execute,queue,
