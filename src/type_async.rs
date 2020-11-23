@@ -5,8 +5,6 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use tokio::sync::Mutex;
-
 use crossterm::{
     execute,queue,
     event::{EventStream,KeyCode,Event,KeyEvent,DisableMouseCapture,EnableMouseCapture},
@@ -33,80 +31,81 @@ async fn delay(millis: u64) {
 }
 
 async fn show_intro() -> Result<u16> {
-    let mut stdout = io::stdout();
-
     let (mut cols,mut rows) = crossterm::terminal::size()?;
-
     if cols < 80 {
         cols = 80;
     }
     if rows < 10 {
         rows = 10;
     }
+    execute!(io::stdout(),SetSize(cols,rows))?;
 
-    execute!(stdout,SetSize(cols,rows))?;
-
-    queue!(stdout,Clear(ClearType::All),Hide,MoveTo(0,0))?;
-    //write!(stdout,"--- WELCOME TO RUSTIC TYPSTER ---")?;
+    queue!(io::stdout(),Clear(ClearType::All),Hide,MoveTo(0,0))?;
     print_centered(cols,"--- WELCOME TO RUSTIC TYPSTER ---".into())?;
-    queue!(stdout,MoveTo(0,1))?;
+    queue!(io::stdout(),MoveTo(0,1))?;
     print_centered(cols,"The typing practice game for Rust".into())?;
-    stdout.flush()?;
+    io::stdout().flush()?;
 
     delay(1000).await;
-    queue!(stdout,MoveTo(0,3))?;
+    queue!(io::stdout(),MoveTo(0,3))?;
     print_centered(cols,"Get ready to type!".into())?;
-    stdout.flush()?;
+    io::stdout().flush()?;
 
     delay(500).await;
-    queue!(stdout,MoveTo(0,6))?;
+    queue!(io::stdout(),MoveTo(0,6))?;
     print_centered(cols-16,"3".into())?;
-    stdout.flush()?;
+    io::stdout().flush()?;
 
     delay(500).await;
     print_centered(cols,"2".into())?;
-    stdout.flush()?;
+    io::stdout().flush()?;
 
     delay(500).await;
     print_centered(cols+16,"1".into())?;
-    stdout.flush()?;
+    io::stdout().flush()?;
 
     delay(500).await;
-
     Ok(cols)
 }
 
 #[tokio::main]
-pub async fn main_type_async() -> Result<()>{
+pub async fn main_rustic_typster() -> Result<()>{
 
     enable_raw_mode()?;
     execute!(io::stdout(), EnableMouseCapture)?;
 
-    let intro = show_intro();
-    let line_gen = LineGenerator::new(10);
+    defer! {
+        match execute!(io::stdout(), Show, DisableMouseCapture) {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Error in scopeguard: {:#?}",e);
+            },
+        }
+        match disable_raw_mode() {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Error in scopeguard: {:#?}",e);
+            },
+        }
+    }
 
-    let (cols,line_gen) = try_join!(intro,line_gen)?;
-    let line_gen_mutex = Arc::new(Mutex::new(line_gen));
+    let (cols,line_gen) = try_join!(show_intro(),LineGenerator::new(10))?;
+    let line_gen_mutex = Arc::new(tokio::sync::Mutex::new(line_gen));
 
     queue!(io::stdout(),MoveTo(0,6),Clear(ClearType::CurrentLine))?;
     io::stdout().flush()?;
 
     let mut reader = EventStream::new();
+    let mut start = SystemTime::now();
 
     let mut need_line = true;
     let mut has_started = false;
-
     let mut join_handle = None;
 
-    let mut typed = Vec::<char>::new();
-
     let mut line: String;
-
-    let mut offset: u16;
-
-    let mut start = SystemTime::now();
-
+    let mut typed = Vec::<char>::new();
     let mut chars = Vec::<char>::new();
+    let mut offset: u16;
 
     let mut num_mistakes = 0u32;
     let mut num_chars = 0u32;
@@ -115,6 +114,7 @@ pub async fn main_type_async() -> Result<()>{
     loop {
         let mut event = reader.next().fuse();
         let mut flag = false;
+
         if need_line {
             line = match line_gen_mutex.try_lock() {
                 Ok(mut mutex) => {
@@ -133,6 +133,7 @@ pub async fn main_type_async() -> Result<()>{
                 },
                 _ => "Waiting on line ...".into(),
             };
+
             if flag {
                 if join_handle.is_none() {
                     let line_gen_mutex2 = line_gen_mutex.clone();
@@ -141,14 +142,16 @@ pub async fn main_type_async() -> Result<()>{
                     }).fuse());
                 }
             }
+
             queue!(io::stdout(),MoveTo(0,6),Clear(ClearType::FromCursorDown))?;
             offset = print_centered(cols,line.clone())?;
             typed.clear();
-            queue!(io::stdout(),MoveTo(offset,7))?;
+            queue!(io::stdout(),MoveTo(0,7),MoveToColumn(offset))?;
             has_started = false;
             chars = line.chars().collect::<Vec<char>>();
             io::stdout().flush()?;
         }
+
         join_handle = match join_handle {
             Some(mut jh) => {
                 select! {
@@ -166,9 +169,6 @@ pub async fn main_type_async() -> Result<()>{
                                 }
                             },
                             Some(Err(e)) => {
-                                execute!(io::stdout(), Show)?;
-                                execute!(io::stdout(), DisableMouseCapture)?;
-                                disable_raw_mode()?;
                                 return Err(e.into());
                             },
                             None => break,
@@ -190,18 +190,20 @@ pub async fn main_type_async() -> Result<()>{
                                     num_millis += elapsed_time;
                                     num_chars += typed.len() as u32;
                                     need_line = true;
-                                    queue!(io::stdout(),Hide)?;
+                                    queue!(io::stdout(),Hide,MoveTo(0,5))?;
+                                    print_centered(cols,format!("t = {}ms",elapsed_time))?;
                                     io::stdout().flush()?;
+                                } else if typed.len() == 0 {
+                                    need_line = true;
                                 }
                             },
                             Event::Key(KeyEvent {code: KeyCode::Backspace, ..}) => {
                                     if typed.len() != 0 {
                                         typed.pop();
-                                        let mut stdout = io::stdout();
-                                        queue!(stdout,MoveLeft(1))?;
-                                        write!(stdout," ")?;
-                                        queue!(stdout,MoveLeft(1))?;
-                                        stdout.flush()?;
+                                        queue!(io::stdout(),MoveLeft(1))?;
+                                        write!(io::stdout()," ")?;
+                                        queue!(io::stdout(),MoveLeft(1))?;
+                                        io::stdout().flush()?;
                                     }
                             },
                             Event::Key(KeyEvent {code: KeyCode::Char(x), ..}) => {
@@ -210,25 +212,22 @@ pub async fn main_type_async() -> Result<()>{
                                     start = SystemTime::now();
                                 }
                                 typed.push(x);
-                                let mut stdout = io::stdout();
+
                                 if typed.len() > chars.len() || chars[typed.len()-1] != x {
-                                    queue!(stdout,SetForegroundColor(Color::AnsiValue(13)),SetBackgroundColor(Color::AnsiValue(13)))?;
-                                    write!(stdout,"{}{}{}",Attribute::Underlined,x,Attribute::NoUnderline)?;
-                                    queue!(stdout,ResetColor)?;
+                                    queue!(io::stdout(),SetForegroundColor(Color::AnsiValue(13)),SetBackgroundColor(Color::AnsiValue(13)))?;
+                                    write!(io::stdout(),"{}{}{}",Attribute::Underlined,x,Attribute::NoUnderline)?;
+                                    queue!(io::stdout(),ResetColor)?;
                                     num_mistakes += 1;
                                 } else {
-                                    write!(stdout,"{}",x)?;
+                                    write!(io::stdout(),"{}",x)?;
                                 }
-                                stdout.flush()?;
+                                io::stdout().flush()?;
 
                             },
                             _ => (),
                         }
                     },
                     Some(Err(e)) => {
-                        execute!(io::stdout(), Show)?;
-                        execute!(io::stdout(), DisableMouseCapture)?;
-                        disable_raw_mode()?;
                         return Err(e.into());
                     },
                     None => break,
@@ -245,10 +244,6 @@ pub async fn main_type_async() -> Result<()>{
         print_centered(cols,format!("You typed {} chars/min at {:.2}% accuracy", char_per_min, accuracy))?;
         io::stdout().flush()?;
     }
-
-    execute!(io::stdout(), Show)?;
-    execute!(io::stdout(), DisableMouseCapture)?;
-    disable_raw_mode()?;
 
     Ok(())
 }

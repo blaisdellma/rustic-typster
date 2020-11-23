@@ -1,3 +1,5 @@
+extern crate rustic_typster;
+
 fn main() {
-    println!("Run examples");
+    crate::rustic_typster::run_rustic_typster();
 }
