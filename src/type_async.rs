@@ -9,7 +9,7 @@ use crossterm::{
     execute,queue,
     event::{EventStream,KeyCode,Event,KeyEvent,DisableMouseCapture,EnableMouseCapture},
     terminal::{SetSize,Clear,ClearType,enable_raw_mode,disable_raw_mode},
-    cursor::{MoveLeft,MoveTo,Hide,Show,MoveToColumn},
+    cursor::{MoveLeft,MoveDown,MoveTo,Hide,Show,MoveToColumn},
     style::{ResetColor,SetForegroundColor,SetBackgroundColor,Color,Attribute}
 };
 
@@ -242,6 +242,7 @@ pub async fn main_rustic_typster() -> Result<()>{
         let char_per_min = num_chars*60*1000/num_millis;
         queue!(io::stdout(),MoveTo(0,6),Clear(ClearType::FromCursorDown))?;
         print_centered(cols,format!("You typed {} chars/min at {:.2}% accuracy", char_per_min, accuracy))?;
+        queue!(io::stdout(),MoveDown(1),MoveToColumn(0))?;
         io::stdout().flush()?;
     }
 
