@@ -1,4 +1,4 @@
-use std::fs::OpenOptions;
+use std::{fs::OpenOptions, collections::VecDeque};
 
 use anyhow::{Result,bail};
 use reqwest::{Client,StatusCode};
@@ -31,9 +31,9 @@ fn get_logger(filename: String) -> Logger {
 #[derive(Debug)]
 pub struct LineGenerator {
     min_buf_len: usize,
-    repo_urls: Vec<String>,
-    file_urls: Vec<String>,
-    lines: Vec<String>,
+    repo_urls: VecDeque<String>,
+    file_urls: VecDeque<String>,
+    lines: VecDeque<String>,
     page_no: u32,
     logger: Logger,
 }
@@ -42,9 +42,9 @@ impl Default for LineGenerator {
     fn default() -> Self {
         LineGenerator {
             min_buf_len: 0,
-            repo_urls: Vec::new(),
-            file_urls: Vec::new(),
-            lines: Vec::new(),
+            repo_urls: VecDeque::new(),
+            file_urls: VecDeque::new(),
+            lines: VecDeque::new(),
             page_no: 0,
             logger: get_logger("tmp.txt".into()),
         }
@@ -62,7 +62,7 @@ impl LineGenerator {
     }
 
     pub fn next_line(&mut self) -> Option<String> {
-        self.lines.pop()
+        self.lines.pop_front()
     }
 
     pub async fn extend(&mut self) -> Result<()> {
@@ -88,7 +88,7 @@ impl LineGenerator {
             if self.repo_urls.len() == 0 {
                 self.extend_repos().await?;
             }
-            let repo_url = self.repo_urls.pop().unwrap();
+            let repo_url = self.repo_urls.pop_front().unwrap();
             let (to_add_files,to_add_folders) = get_file_urls(repo_url).await?;
             self.repo_urls.extend(to_add_folders);
             to_add.extend(to_add_files);
@@ -103,7 +103,7 @@ impl LineGenerator {
             if self.file_urls.len() == 0 {
                 self.extend_files().await?;
             }
-            let file_url = self.file_urls.pop().unwrap();
+            let file_url = self.file_urls.pop_front().unwrap();
             to_add = get_lines(file_url).await?;
         }
         self.lines.extend(to_add);
