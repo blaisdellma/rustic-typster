@@ -226,7 +226,7 @@ async fn get_lines(file_url: SrcString) -> Result<Vec<SrcString>> {
 }
 
 #[tokio::main]
-async fn main_rustic_typster() -> Result<()> {
+pub async fn main_rustic_typster() -> Result<()> {
     let mut line_gen = LineGenerator::new(10).await?;
     for _ in 0..100 {
         let line = loop {
@@ -238,7 +238,7 @@ async fn main_rustic_typster() -> Result<()> {
             }
         };
 
-        // println!("{}",line);
+        println!("{} ::: {}",line.string, line.source);
     }
     Ok(())
 }

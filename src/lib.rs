@@ -17,3 +17,12 @@ pub fn run_rustic_typster() {
         }
     }
 }
+
+pub fn test_rustic_typster() {
+    match fetch_async::main_rustic_typster() {
+        Ok(_) => (),
+        Err(e) => {
+            eprintln!("\nProgram ended with error: {:#?}",e);
+        }
+    }
+}
