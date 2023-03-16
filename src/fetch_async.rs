@@ -1,9 +1,12 @@
-use std::{fs::OpenOptions, collections::VecDeque};
+use std::collections::VecDeque;
 
 use anyhow::{Result,bail};
 use reqwest::{Client,StatusCode};
 use select::{document::Document,predicate::{Predicate,Attr,Name}};
-use slog::{Drain,Logger,o};
+
+use tracing::{info,debug,warn,error,Level};
+use tracing_subscriber::{self as ts, EnvFilter};
+use tracing_appender as ta;
 
 use crate::SrcString;
 
@@ -15,19 +18,19 @@ static APP_USER_AGENT: &str = concat!(
     env!("CARGO_PKG_VERSION"),
 );
 
-fn get_logger(filename: String) -> Logger {
-    let file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(filename)
-        .unwrap();
-
-    let decorator = slog_term::PlainDecorator::new(file);
-    let drain = slog_term::FullFormat::new(decorator).build().fuse();
-    let drain = slog_async::Async::new(drain).build().fuse();
-
-    Logger::root(drain, o!())
+fn init_log(prefix: &str) -> Result<ta::non_blocking::WorkerGuard> {
+    let log_dir = std::env::var("CARGO_MANIFEST_DIR")?;
+    let (file, guard) = ta::non_blocking(ta::rolling::daily(log_dir,prefix));
+    ts::fmt()
+        .with_writer(file)
+        .with_max_level(Level::DEBUG)
+        .with_env_filter({
+            EnvFilter::from_default_env()
+                .add_directive("warn".parse()?)
+                .add_directive("rustic_typster=debug".parse()?)
+        }).init();
+    debug!("Log init successful");
+    Ok(guard)
 }
 
 #[derive(Debug)]
@@ -37,25 +40,21 @@ pub struct LineGenerator {
     file_urls: VecDeque<SrcString>,
     lines: VecDeque<SrcString>,
     page_no: u32,
-    logger: Logger,
-}
-
-impl Default for LineGenerator {
-    fn default() -> Self {
-        LineGenerator {
-            min_buf_len: 0,
-            repo_urls: VecDeque::new(),
-            file_urls: VecDeque::new(),
-            lines: VecDeque::new(),
-            page_no: 0,
-            logger: get_logger("tmp.txt".into()),
-        }
-    }
+    _trace_guard: ta::non_blocking::WorkerGuard,
 }
 
 impl LineGenerator {
     pub async fn new(min_buf_len: usize) -> Result<Self> {
-        Ok((Self {min_buf_len, page_no: 1, ..Self::default()}).init().await?)
+        let _trace_guard = init_log("rt_log")?;
+        let line_gen = LineGenerator {
+            min_buf_len,
+            repo_urls: VecDeque::new(),
+            file_urls: VecDeque::new(),
+            lines: VecDeque::new(),
+            page_no: 1,
+            _trace_guard,
+        };
+        Ok(line_gen.init().await?)
     }
 
     async fn init(mut self) -> Result<Self> {

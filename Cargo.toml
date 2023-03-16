@@ -7,16 +7,30 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# errors
 anyhow = "1.0"
+
+# async
 futures = "0.3"
 futures-timer = "3.0"
-reqwest = "0.11"
-tokio = {version = "1.26", features = ["full"]}
-crossterm = {version = "0.26", features = ["event-stream"]}
 select = "0.6"
+tokio = {version = "1.26", features = ["full"]}
+
+# web
+reqwest = "0.11"
 serde_json = "1.0"
-slog = {version = "2.7", features = ["max_level_trace","release_max_level_warn"]}
-slog-term = "2.9"
-slog-async = "2.7"
+
+# tui
+crossterm = {version = "0.26", features = ["event-stream"]}
 scopeguard = "1.1"
+
+# logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+# slog = {version = "2.7", features = ["max_level_trace","release_max_level_warn"]}
+# slog-term = "2.9"
+# slog-async = "2.7"
+
 
