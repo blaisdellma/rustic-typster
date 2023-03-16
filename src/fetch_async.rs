@@ -5,6 +5,8 @@ use reqwest::{Client,StatusCode};
 use select::{document::Document,predicate::{Predicate,Attr,Name}};
 use slog::{Drain,Logger,o};
 
+use crate::SrcString;
+
 const BASE_CRATES_URL: &str = "https://crates.io/api/v1/crates?sort=recent-downloads";
 
 static APP_USER_AGENT: &str = concat!(
@@ -31,9 +33,9 @@ fn get_logger(filename: String) -> Logger {
 #[derive(Debug)]
 pub struct LineGenerator {
     min_buf_len: usize,
-    repo_urls: VecDeque<String>,
-    file_urls: VecDeque<String>,
-    lines: VecDeque<String>,
+    repo_urls: VecDeque<SrcString>,
+    file_urls: VecDeque<SrcString>,
+    lines: VecDeque<SrcString>,
     page_no: u32,
     logger: Logger,
 }
@@ -61,7 +63,7 @@ impl LineGenerator {
         Ok(self)
     }
 
-    pub fn next_line(&mut self) -> Option<String> {
+    pub fn next_line(&mut self) -> Option<SrcString> {
         self.lines.pop_front()
     }
 
@@ -122,16 +124,21 @@ async fn get_page_contents(url: String) -> Result<String> {
     Ok(text)
 }
 
-async fn get_repo_urls(page_no: u32) -> Result<Vec<String>> {
+async fn get_repo_urls(page_no: u32) -> Result<Vec<SrcString>> {
     let url = format!("{}&page={}",BASE_CRATES_URL,page_no);
     let json_str = get_page_contents(url).await?;
     let json_val: serde_json::Value = serde_json::from_str(&json_str)?;
     let mut results = Vec::new();
     if let serde_json::Value::Array(v) = &json_val["crates"] {
         for crat in v {
-            if let serde_json::Value::String(s) = &crat["repository"] {
-                if s.contains("github.com") {
-                    results.push(s.into());
+            if let serde_json::Value::String(repo_url) = &crat["repository"] {
+                if repo_url.contains("github.com") {
+                    if let serde_json::Value::String(id) = &crat["id"] {
+                        results.push(SrcString {
+                            string: repo_url.into(),
+                            source: id.into(),
+                        });
+                    }
                 }
             }
         }
@@ -142,7 +149,9 @@ async fn get_repo_urls(page_no: u32) -> Result<Vec<String>> {
     Ok(results)
 }
 
-async fn get_file_urls(repo_url: String) -> Result<(Vec<String>,Vec<String>)> {
+async fn get_file_urls(repo_url: SrcString) -> Result<(Vec<SrcString>,Vec<SrcString>)> {
+    let source = repo_url.source;
+    let repo_url = repo_url.string;
     let mut file_urls = Vec::new();
     let mut folder_urls = Vec::new();
 
@@ -157,9 +166,15 @@ async fn get_file_urls(repo_url: String) -> Result<(Vec<String>,Vec<String>)> {
                     None => (),
                     Some(s) => {
                         if s.contains("blob") && s.ends_with(".rs") {
-                            file_urls.push(format!("https://github.com{}",s));
+                            file_urls.push(SrcString {
+                                string: format!("https://github.com{}",s),
+                                source: source.clone(),
+                            });
                         } else if s.contains("tree") {
-                            folder_urls.push(format!("https://github.com{}",s));
+                            folder_urls.push(SrcString {
+                                string: format!("https://github.com{}",s),
+                                source: source.clone(),
+                            });
                         }
                     }
                 }
@@ -171,29 +186,42 @@ async fn get_file_urls(repo_url: String) -> Result<(Vec<String>,Vec<String>)> {
     Ok((file_urls,folder_urls))
 }
 
-async fn convert_file_url_to_raw(file_url: String) -> Result<Option<String>> {
+async fn convert_file_url_to_raw(file_url: SrcString) -> Result<Option<SrcString>> {
+    let source = file_url.source;
+    let file_url = file_url.string;
     let contents = get_page_contents(file_url).await?;
     let document = Document::from(contents.as_str());
     Ok(match document.find(Attr("id","raw-url")).next() {
         None => None,
         Some(x) => match x.attr("href") {
             None => None,
-            Some(x) => Some(format!("https://github.com{}",x)),
+            Some(x) => {
+                Some({
+                    SrcString {
+                        string: format!("https://github.com{}",x),
+                        source,
+                    }
+                })
+            },
         },
     })
 }
 
-async fn get_lines(file_url: String) -> Result<Vec<String>> {
+async fn get_lines(file_url: SrcString) -> Result<Vec<SrcString>> {
+    let source = file_url.source.clone();
     let raw_url = match convert_file_url_to_raw(file_url).await? {
         Some(x) => x,
         None => return Ok(Vec::new()),
     };
-    let contents = get_page_contents(raw_url).await?;
+    let contents = get_page_contents(raw_url.string).await?;
     let lines: Vec<_> = contents.split_terminator("\n").map(|s| s.trim()).filter(|s| {
         s.len() >= 10 && s.len() <= 80
         &&
         !s.starts_with("//")
-    }).map(|s| s.into()).collect();
+    }).map(|s| SrcString{
+        string: s.into(),
+        source: source.clone(),
+    }).collect();
     Ok(lines)
 }
 
@@ -210,7 +238,7 @@ async fn main_rustic_typster() -> Result<()> {
             }
         };
 
-        println!("{}",line);
+        // println!("{}",line);
     }
     Ok(())
 }

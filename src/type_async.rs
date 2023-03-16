@@ -103,6 +103,7 @@ pub async fn main_rustic_typster() -> Result<()>{
     let mut join_handle = None;
 
     let mut line: String;
+    let mut source: String;
     let mut typed = Vec::<char>::new();
     let mut chars = Vec::<char>::new();
     let mut offset: u16;
@@ -116,22 +117,22 @@ pub async fn main_rustic_typster() -> Result<()>{
         let mut flag = false;
 
         if need_line {
-            line = match line_gen_mutex.try_lock() {
+            (line, source) = match line_gen_mutex.try_lock() {
                 Ok(mut mutex) => {
                     match mutex.next_line() {
-                        Some(x) => {
+                        Some(src_str) => {
                             need_line = false;
                             queue!(io::stdout(),Show)?;
                             io::stdout().flush()?;
-                            x
+                            (src_str.string, src_str.source)
                         },
                         None => {
                             flag = true;
-                            "Waiting on line ...".into()
+                            ("Waiting on line ...".into(), "".into())
                         },
                     }
                 },
-                _ => "Waiting on line ...".into(),
+                _ => ("Waiting on line ...".into(), "".into())
             };
 
             if flag {
@@ -142,7 +143,9 @@ pub async fn main_rustic_typster() -> Result<()>{
                     }).fuse());
                 }
             }
-
+            
+            queue!(io::stdout(),MoveTo(0,5),Clear(ClearType::FromCursorDown))?;
+            print_centered(cols,format!("FROM: {}",source))?;
             queue!(io::stdout(),MoveTo(0,6),Clear(ClearType::FromCursorDown))?;
             offset = print_centered(cols,line.clone())?;
             typed.clear();
