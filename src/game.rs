@@ -8,6 +8,8 @@ use crossterm::event::{EventStream,KeyCode,Event,KeyEvent};
 
 use futures::{future::FutureExt, select, StreamExt, try_join};
 
+use tokio::sync::Mutex;
+
 use crate::line_gen::*;
 use crate::tui::*;
 
@@ -33,13 +35,39 @@ impl TypingStats {
     }
 }
 
+fn get_next_line(line_gen_mutex: &Arc<Mutex<LineGenerator>>) -> Result<Option<SrcString>> {
+    let src_str = match line_gen_mutex.try_lock() {
+        Ok(mut mutex) => {
+            match mutex.next_line() {
+                Some(src_str) => {
+                    // line found
+                    show_cursor()?;
+                    Some(src_str)
+                },
+                None => {
+                    // no lines in queue
+                    // trigger line_gen to fetch more
+                    None
+                },
+            }
+        },
+        // mutext not available, wait til next loop
+        _ => None
+    };
+    Ok(src_str)
+}
+
 #[tokio::main]
 pub async fn run() -> Result<()>{
+//     run_it().await
+// }
+//
+// async fn run_it() -> Result<()> {
 
     let _guard = setup_tui()?;
 
     let (cols,line_gen) = try_join!(show_intro(),LineGenerator::new(10))?;
-    let line_gen_mutex = Arc::new(tokio::sync::Mutex::new(line_gen));
+    let line_gen_mutex = Arc::new(Mutex::new(line_gen));
     clear_countdown()?;
 
     let mut reader = EventStream::new();
@@ -47,10 +75,11 @@ pub async fn run() -> Result<()>{
 
     let mut need_line = true;
     let mut has_started = false;
-    let mut join_handle = None;
+    let mut line_gen_jh = None;
 
-    let mut line =  String::new();
-    let mut source: String;
+    let mut src_str: SrcString;
+    let mut line: &str = "";
+    let mut source: &str;
     let mut typed = Vec::<char>::new();
     let mut chars = Vec::<char>::new();
 
@@ -58,45 +87,33 @@ pub async fn run() -> Result<()>{
 
     loop {
         let mut event = reader.next().fuse();
-        let mut need_extend = false;
 
         // fetch next line from queue
         if need_line {
-            (line, source) = match line_gen_mutex.try_lock() {
-                Ok(mut mutex) => {
-                    match mutex.next_line() {
-                        Some(src_str) => {
-                            // line found
-                            need_line = false;
-                            show_cursor()?;
-                            (src_str.string, src_str.source)
-                        },
-                        None => {
-                            // no lines in queue
-                            // trigger line_gen to fetch more
-                            need_extend = true;
-                            ("Waiting on line ...".into(), "".into())
-                        },
-                    }
+            src_str = match get_next_line(&line_gen_mutex)? {
+                Some(src_str) => {
+                    src_str
                 },
-                // mutext not available, wait til next loop
-                _ => ("Waiting on line ...".into(), "".into())
-            };
-
-            // does line_gen need to fetch more lines
-            // if we're not already waiting on line_gen
-            // spawn task to fill line queue
-            if need_extend {
-                if join_handle.is_none() {
-                    let line_gen_mutex2 = line_gen_mutex.clone();
-                    join_handle = Some(tokio::task::spawn(async move {
-                        line_gen_mutex2.lock().await.extend().await.expect("Extending lines");
-                    }).fuse());
+                None => {
+                    // does line_gen need to fetch more lines
+                    // if we're not already waiting on line_gen
+                    // spawn task to fill line queue
+                    if line_gen_jh.is_none() {
+                        let line_gen_mutex2 = line_gen_mutex.clone();
+                        line_gen_jh = Some(tokio::task::spawn(async move {
+                            line_gen_mutex2.lock().await.extend().await.expect("Extending lines");
+                        }).fuse());
+                    }
+                    SrcString::default()
                 }
-            }
+            };
+            need_line = false;
+
+            line = &src_str.string;
+            source = &src_str.source;
             
             // show current line with source
-            display_current_line(cols,&line,&source)?;
+            display_current_line(cols,line,source)?;
 
             // typing setup
             has_started = false;
@@ -104,7 +121,7 @@ pub async fn run() -> Result<()>{
             typed.clear();
         }
 
-        join_handle = match join_handle {
+        line_gen_jh = match line_gen_jh {
             Some(mut jh) => {
                 select! {
                     _ = jh => {
@@ -139,7 +156,7 @@ pub async fn run() -> Result<()>{
                             Event::Key(KeyEvent {code: KeyCode::Enter, ..}) => {
                                 if typed == chars {
                                     let elapsed_time_ms = u32::try_from(start.elapsed()?.as_millis())?;
-                                    stats.add_line(&line,elapsed_time_ms);
+                                    stats.add_line(line,elapsed_time_ms);
                                     need_line = true;
                                     show_time(cols,elapsed_time_ms)?;
                                 } else if typed.len() == 0 {

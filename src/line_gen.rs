@@ -14,6 +14,15 @@ pub struct SrcString {
     pub source: String,
 }
 
+impl Default for SrcString {
+    fn default() -> Self {
+        Self {
+            string: "Waiting on line ...".into(),
+            source: "".into(),
+        }
+    }
+}
+
 const BASE_CRATES_URL: &str = "https://crates.io/api/v1/crates?sort=recent-downloads";
 
 static APP_USER_AGENT: &str = concat!(

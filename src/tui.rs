@@ -150,8 +150,8 @@ pub fn show_results(cols: u16, stats: TypingStats) -> Result<()> {
         let char_per_min = stats.total_chars*60*1000/stats.total_time_ms;
         queue!(io::stdout(),MoveTo(0,6),Clear(ClearType::FromCursorDown))?;
         print_centered(cols,&format!("You typed {} chars/min at {:.2}% accuracy", char_per_min, accuracy))?;
-        queue!(io::stdout(),MoveDown(1),MoveToColumn(0))?;
-        io::stdout().flush()?;
     }
+    queue!(io::stdout(),MoveDown(1),MoveToColumn(0))?;
+    io::stdout().flush()?;
     Ok(())
 }
