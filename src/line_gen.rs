@@ -4,11 +4,15 @@ use anyhow::{Result,bail};
 use reqwest::{Client,StatusCode};
 use select::{document::Document,predicate::{Predicate,Attr,Name}};
 
-use tracing::{info,debug,warn,error,Level};
+use tracing::{debug,Level};
 use tracing_subscriber::{self as ts, EnvFilter};
 use tracing_appender as ta;
 
-use crate::SrcString;
+#[derive(Debug)]
+pub struct SrcString {
+    pub string: String,
+    pub source: String,
+}
 
 const BASE_CRATES_URL: &str = "https://crates.io/api/v1/crates?sort=recent-downloads";
 
@@ -230,7 +234,7 @@ async fn get_lines(file_url: SrcString) -> Result<Vec<SrcString>> {
 }
 
 #[tokio::main]
-pub async fn main_rustic_typster() -> Result<()> {
+pub async fn dump() -> Result<()> {
     let mut line_gen = LineGenerator::new(10).await?;
     for _ in 0..100 {
         let line = loop {
@@ -245,10 +249,4 @@ pub async fn main_rustic_typster() -> Result<()> {
         println!("{} ::: {}",line.string, line.source);
     }
     Ok(())
-}
-
-pub fn start_rustic_typster() {
-    println!("Running Rustic Typster");
-    main_rustic_typster().unwrap();
-    println!("Done");
 }

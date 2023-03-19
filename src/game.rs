@@ -16,7 +16,7 @@ use crossterm::{
 use futures::{future::FutureExt, select, StreamExt, try_join};
 use futures_timer::Delay;
 
-use crate::fetch_async::LineGenerator;
+use crate::line_gen::LineGenerator;
 
 fn print_centered(cols: u16, line: String) -> Result<u16> {
     let line_len = u16::try_from(line.len())?;
@@ -69,7 +69,7 @@ async fn show_intro() -> Result<u16> {
 }
 
 #[tokio::main]
-pub async fn main_rustic_typster() -> Result<()>{
+pub async fn run() -> Result<()>{
 
     enable_raw_mode()?;
     execute!(io::stdout(), EnableMouseCapture)?;
