@@ -47,7 +47,7 @@ fn init_log(prefix: &str) -> Result<ta::non_blocking::WorkerGuard> {
 }
 
 #[derive(Debug)]
-pub struct LineGenerator {
+pub struct LineQueue {
     min_buf_len: usize,
     repo_urls: VecDeque<SrcString>,
     file_urls: VecDeque<SrcString>,
@@ -56,10 +56,10 @@ pub struct LineGenerator {
     _trace_guard: ta::non_blocking::WorkerGuard,
 }
 
-impl LineGenerator {
+impl LineQueue {
     pub async fn new(min_buf_len: usize) -> Result<Self> {
         let _trace_guard = init_log("rt_log")?;
-        let line_gen = LineGenerator {
+        let line_queue = Self {
             min_buf_len,
             repo_urls: VecDeque::new(),
             file_urls: VecDeque::new(),
@@ -67,7 +67,7 @@ impl LineGenerator {
             page_no: 1,
             _trace_guard,
         };
-        Ok(line_gen.init().await?)
+        Ok(line_queue.init().await?)
     }
 
     async fn init(mut self) -> Result<Self> {
@@ -244,7 +244,7 @@ async fn get_lines(file_url: SrcString) -> Result<Vec<SrcString>> {
 
 #[tokio::main]
 pub async fn dump() -> Result<()> {
-    let mut line_gen = LineGenerator::new(10).await?;
+    let mut line_gen = LineQueue::new(10).await?;
     for _ in 0..100 {
         let line = loop {
             match line_gen.next_line() {

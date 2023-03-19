@@ -10,7 +10,7 @@ use futures::{future::FutureExt, select, StreamExt, try_join};
 
 use tokio::sync::Mutex;
 
-use crate::line_gen::*;
+use crate::line_queue::*;
 use crate::tui::*;
 
 #[derive(Default)]
@@ -35,7 +35,7 @@ impl TypingStats {
     }
 }
 
-fn get_next_line(line_gen_mutex: &Arc<Mutex<LineGenerator>>) -> Result<Option<SrcString>> {
+fn get_next_line(line_gen_mutex: &Arc<Mutex<LineQueue>>) -> Result<Option<SrcString>> {
     let src_str = match line_gen_mutex.try_lock() {
         Ok(mut mutex) => {
             match mutex.next_line() {
@@ -66,7 +66,7 @@ pub async fn run() -> Result<()>{
 
     let _guard = setup_tui()?;
 
-    let (cols,line_gen) = try_join!(show_intro(),LineGenerator::new(10))?;
+    let (cols,line_gen) = try_join!(show_intro(),LineQueue::new(10))?;
     let line_gen_mutex = Arc::new(Mutex::new(line_gen));
     clear_countdown()?;
 
