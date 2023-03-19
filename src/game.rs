@@ -101,7 +101,8 @@ pub async fn run() -> Result<()>{
                     if line_gen_jh.is_none() {
                         let line_gen_mutex2 = line_gen_mutex.clone();
                         line_gen_jh = Some(tokio::task::spawn(async move {
-                            line_gen_mutex2.lock().await.extend().await.expect("Extending lines");
+                            // line_gen_mutex2.lock().await.extend().await.expect("Extending lines");
+                            line_gen_mutex2.lock().await.fill().await.expect("Extending lines");
                         }).fuse());
                     }
                     SrcString::default()

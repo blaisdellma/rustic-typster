@@ -1,3 +1,4 @@
+mod fetch;
 mod line_queue;
 mod game;
 mod tui;
