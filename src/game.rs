@@ -11,6 +11,28 @@ use futures::{future::FutureExt, select, StreamExt, try_join};
 use crate::line_gen::*;
 use crate::tui::*;
 
+#[derive(Default)]
+pub struct TypingStats {
+    pub total_mistakes: u32,
+    pub total_chars: u32,
+    pub total_time_ms: u32,
+}
+
+impl TypingStats {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add_line(&mut self, line: &str, time_elapsed_ms: u32) {
+        self.total_chars += line.len() as u32;
+        self.total_time_ms += time_elapsed_ms;
+    }
+
+    pub fn add_mistake(&mut self) {
+        self.total_mistakes += 1;
+    }
+}
+
 #[tokio::main]
 pub async fn run() -> Result<()>{
 
@@ -27,14 +49,12 @@ pub async fn run() -> Result<()>{
     let mut has_started = false;
     let mut join_handle = None;
 
-    let mut line: String;
+    let mut line =  String::new();
     let mut source: String;
     let mut typed = Vec::<char>::new();
     let mut chars = Vec::<char>::new();
 
-    let mut num_mistakes = 0u32;
-    let mut num_chars = 0u32;
-    let mut num_millis = 0u32;
+    let mut stats = TypingStats::new();
 
     loop {
         let mut event = reader.next().fuse();
@@ -118,11 +138,10 @@ pub async fn run() -> Result<()>{
                             },
                             Event::Key(KeyEvent {code: KeyCode::Enter, ..}) => {
                                 if typed == chars {
-                                    let elapsed_time = u32::try_from(start.elapsed()?.as_millis())?;
-                                    num_millis += elapsed_time;
-                                    num_chars += typed.len() as u32;
+                                    let elapsed_time_ms = u32::try_from(start.elapsed()?.as_millis())?;
+                                    stats.add_line(&line,elapsed_time_ms);
                                     need_line = true;
-                                    show_time(cols,elapsed_time)?;
+                                    show_time(cols,elapsed_time_ms)?;
                                 } else if typed.len() == 0 {
                                     need_line = true;
                                 }
@@ -142,7 +161,7 @@ pub async fn run() -> Result<()>{
 
                                 if typed.len() > chars.len() || chars[typed.len()-1] != x {
                                     type_char(x,false)?;
-                                    num_mistakes += 1;
+                                    stats.add_mistake();
                                 } else {
                                     type_char(x,true)?;
                                 }
@@ -161,7 +180,7 @@ pub async fn run() -> Result<()>{
         }
     }
 
-    show_results(cols, num_chars, num_millis, num_mistakes)?;
+    show_results(cols, stats)?;
 
     Ok(())
 }

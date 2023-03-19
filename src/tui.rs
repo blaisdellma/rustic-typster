@@ -16,6 +16,8 @@ use futures_timer::Delay;
 
 use scopeguard::{guard,ScopeGuard};
 
+use crate::game::TypingStats;
+
 pub fn setup_tui() -> Result<ScopeGuard<(),impl FnOnce(()) -> ()>> {
     enable_raw_mode()?;
     execute!(io::stdout(), EnableMouseCapture)?;
@@ -142,10 +144,10 @@ pub fn show_time(cols: u16, elapsed_time: u32) -> Result<()> {
     Ok(())
 }
 
-pub fn show_results(cols: u16, num_chars: u32, num_millis: u32, num_mistakes: u32) -> Result<()> {
-    if num_chars > 0 {
-        let accuracy = 100.0-((num_mistakes as f32)*100.0/(num_chars as f32));
-        let char_per_min = num_chars*60*1000/num_millis;
+pub fn show_results(cols: u16, stats: TypingStats) -> Result<()> {
+    if stats.total_chars > 0 {
+        let accuracy = 100.0-((stats.total_mistakes as f32)*100.0/(stats.total_chars as f32));
+        let char_per_min = stats.total_chars*60*1000/stats.total_time_ms;
         queue!(io::stdout(),MoveTo(0,6),Clear(ClearType::FromCursorDown))?;
         print_centered(cols,&format!("You typed {} chars/min at {:.2}% accuracy", char_per_min, accuracy))?;
         queue!(io::stdout(),MoveDown(1),MoveToColumn(0))?;
