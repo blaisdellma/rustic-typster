@@ -124,6 +124,7 @@ async fn get_page_contents(url: String) -> Result<String> {
 }
 
 async fn get_repo_urls(page_no: u32) -> Result<Vec<SrcString>> {
+    debug!("Fetching repo urls from page {}", page_no);
     let url = format!("{}&page={}",BASE_CRATES_URL,page_no);
     let json_str = get_page_contents(url).await?;
     let json_val: serde_json::Value = serde_json::from_str(&json_str)?;
@@ -207,6 +208,7 @@ async fn convert_file_url_to_raw(file_url: SrcString) -> Result<Option<SrcString
 }
 
 async fn get_lines(file_url: SrcString) -> Result<Vec<SrcString>> {
+    debug!("Fetching lines from file: {}", file_url.string);
     let source = file_url.source.clone();
     let raw_url = match convert_file_url_to_raw(file_url).await? {
         Some(x) => x,
@@ -217,9 +219,12 @@ async fn get_lines(file_url: SrcString) -> Result<Vec<SrcString>> {
         s.len() >= 10 && s.len() <= 80
         &&
         !s.starts_with("//")
-    }).map(|s| SrcString{
-        string: s.into(),
-        source: source.clone(),
+    }).map(|s| {
+        debug!("Found line: \"{}\" from {}",s,source);
+        SrcString{
+            string: s.into(),
+            source: source.clone(),
+        }
     }).collect();
     Ok(lines)
 }
