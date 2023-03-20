@@ -31,7 +31,7 @@ impl<T> UrlResource<T> where T: Fetchable {
 }
 
 #[async_trait]
-trait Fetchable where Self: Sized {
+pub trait Fetchable where Self: Sized {
     async fn fetch(url: &str) -> Result<Self>;
 }
 
@@ -169,11 +169,9 @@ impl Fetchable for Folder {
             files,
             folders,
         })
-        // Err(anyhow::anyhow!("not implemented yet"))
     }
 }
 
-// pub type Repo = Folder;
 #[derive(Debug)]
 pub struct Repo {
     source: String,
